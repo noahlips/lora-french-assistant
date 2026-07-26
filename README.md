@@ -2,11 +2,11 @@
 
 Parameter-efficient fine-tuning (LoRA) of **Qwen2.5-0.5B-Instruct** on a French instruction dataset, with a before/after evaluation comparing the base model and the tuned adapters.
 
-The goal of this repo is to demonstrate the *complete* PEFT workflow — dataset preparation with chat templates, adapter training, and measurable evaluation — not to chase benchmark scores with a small model.
+The goal of this repo is to demonstrate the *complete* PEFT workflow (dataset preparation with chat templates, adapter training, and measurable evaluation) rather than to chase benchmark scores with a small model.
 
 ## Why LoRA?
 
-Full fine-tuning of even a 0.5B model updates ~500M parameters. LoRA freezes the base model and trains low-rank decomposition matrices injected into the attention projections (`q/k/v/o_proj`) — here **~2M trainable parameters (<1%)**, producing an adapter of a few MB that can be shared and stacked independently of the base weights.
+Full fine-tuning of even a 0.5B model updates ~500M parameters. LoRA freezes the base model and trains low-rank decomposition matrices injected into the attention projections (`q/k/v/o_proj`): here **~2M trainable parameters (<1%)**, producing an adapter of a few MB that can be shared and stacked independently of the base weights.
 
 ## Pipeline
 
