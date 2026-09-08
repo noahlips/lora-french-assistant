@@ -1,66 +1,53 @@
-# LoRA French Assistant
+# LoRA fine-tuning on French instructions
 
-Parameter-efficient fine-tuning (LoRA) of **Qwen2.5-0.5B-Instruct** on a French instruction dataset, with a before/after evaluation comparing the base model and the tuned adapters.
+I wanted to try fine-tuning a language model myself instead of just calling one through an API. This repo is the result: a LoRA adapter trained on top of Qwen2.5-0.5B-Instruct, using a French instruction dataset, and evaluated against the base model.
 
-The goal of this repo is to demonstrate the *complete* PEFT workflow (dataset preparation with chat templates, adapter training, and measurable evaluation) rather than to chase benchmark scores with a small model.
+Everything ran on CPU, since I don't have a GPU. One epoch took about 5 hours.
 
-## Results
+## Setup
 
-Perplexity on 50 held-out examples, after 1 epoch (179 optimizer steps, ~5 h on CPU):
+| | |
+|---|---|
+| Base model | Qwen2.5-0.5B-Instruct |
+| Dataset | French-Alpaca, 2850 train / 150 eval |
+| LoRA | r=16, alpha=32, dropout 0.05 |
+| Adapted layers | q_proj, k_proj, v_proj, o_proj |
+| Trained parameters | 2.16M out of 496M (0.44%) |
+| Adapter size | 8.6 MB |
 
-| Model | Perplexity |
-|-------|------------|
-| Qwen2.5-0.5B-Instruct (base) | 19.75 |
-| + LoRA adapter | **3.10** |
+Training used Adam at 2e-4 with a cosine schedule, batch size 4 with 4 gradient accumulation steps.
 
-Training loss fell from 2.14 to ~1.21 (mean 1.30). Only **2,162,688 parameters** were trained out of 496,195,456 (**0.44 %**), producing an 8.6 MB adapter.
+## What came out of it
 
-### Reading these numbers honestly
+Perplexity on the held-out split, before and after:
 
-A 6.4x perplexity drop looks dramatic, but it must be interpreted carefully: the evaluation split comes from the *same* dataset as the training data, so most of the gain reflects adaptation to French-Alpaca's format and register rather than a genuine capability gain. Perplexity measures how predictable the reference answer is, not whether the answer is useful.
+| | Perplexity |
+|---|---|
+| Base model | 19.75 |
+| With LoRA adapter | 3.10 |
 
-The qualitative outputs confirm this. Asked to contrast supervised and unsupervised learning, the tuned model produces fluent, well-formed French that is **factually wrong** (it describes both paradigms identically). Asked to draft an email, it returns a placeholder instead of the email. Only the most generic prompt (advantages of remote work) yields a usable answer.
+Training loss went from 2.14 down to about 1.21 over 179 steps.
 
-The honest conclusion: the adapter successfully taught a 0.5B model the *shape* of a French instruction response, and could not teach it knowledge or reasoning it never had. That is the expected outcome at this scale, and it is why perplexity alone is an insufficient evaluation.
+## Why that number is misleading
 
-## Why LoRA?
+A 6x drop in perplexity looks great until you notice the eval split comes from the same dataset as the training data. So the model mostly learned what a French-Alpaca answer looks like, not anything new about the world.
 
-Full fine-tuning of even a 0.5B model updates ~500M parameters. LoRA freezes the base model and trains low-rank decomposition matrices injected into the attention projections (`q/k/v/o_proj`): here ~2M trainable parameters, producing an adapter of a few MB that can be shared and stacked independently of the base weights.
+The generated samples make this obvious. Asked to explain the difference between supervised and unsupervised learning, the tuned model writes clean French and gets it wrong: it describes both the same way. Asked to write a short email, it returns a placeholder instead of an actual email. The only decent answer was to the vaguest question.
 
-## Pipeline
+So the honest conclusion is that LoRA taught a 0.5B model the shape of a French instruction answer, and could not give it knowledge it never had. That is what should happen at this size, and it is a good reminder that perplexity on its own does not tell you whether a model is useful.
 
-```
-prepare_data.py                train_lora.py                    evaluate.py
-HF dataset (French-Alpaca) →   PEFT LoRA r=16, α=32        →    perplexity base vs tuned
-chat-template JSONL splits     bf16 on GPU / fp32 on CPU        + side-by-side generations
-```
-
-## Usage
+## Running it
 
 ```bash
 pip install -r requirements.txt
 
-python -m src.prepare_data --n-samples 3000   # download + format dataset
-python -m src.train_lora --epochs 1           # train adapters (GPU strongly recommended)
-python -m src.train_lora --max-steps 20       # CPU smoke test
-python -m src.evaluate --n-eval 50            # perplexity before/after + samples
+python -m src.prepare_data --n-samples 3000
+python -m src.train_lora --epochs 1        # ~5h on CPU
+python -m src.evaluate --n-eval 50
 ```
 
-## Configuration
+`python -m src.train_lora --max-steps 20` runs a quick smoke test if you just want to check the pipeline works.
 
-| Hyperparameter | Value |
-|----------------|-------|
-| Base model | Qwen2.5-0.5B-Instruct |
-| Rank (r) | 16 |
-| Alpha | 32 |
-| Dropout | 0.05 |
-| Target modules | q_proj, k_proj, v_proj, o_proj |
-| LR / schedule | 2e-4, cosine, 3% warmup |
-| Effective batch size | 16 (4 × 4 grad. accumulation) |
-| Dataset | French-Alpaca, 2850 train / 150 eval |
+## If I redo this
 
-## What would improve this
-
-- Evaluate on a French benchmark the model was not tuned on, so the score measures capability rather than format adaptation
-- Compare several LoRA ranks to find where the accuracy/size trade-off sits
-- Start from a 7B base model, where the adapter has real capacity to work with
+The obvious next step is evaluating on a French benchmark the model was never trained on, so the score measures something real. After that, comparing a few LoRA ranks, and starting from a 7B model where the adapter actually has room to work.
